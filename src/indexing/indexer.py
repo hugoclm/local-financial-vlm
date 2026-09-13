@@ -19,7 +19,7 @@ class LocalVectorIndexer:
 
         # 1. Chargement du modèle d'embeddings local
         print(f"Chargement du modèle d'embeddings ({model_name})...")
-        self.encoder = SentenceTransformer(model_name)
+        self.encoder = SentenceTransformer(model_name, device = "cpu")
         # BGE-M3 produit des vecteurs de dimension 1024
         self.vector_dim = self.encoder.get_embedding_dimension()
 

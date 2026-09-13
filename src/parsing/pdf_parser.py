@@ -4,7 +4,7 @@ from src.parsing.schemas import DocumentChunk, ChunkType
 
 
 class FinancialPDFParser:
-    """Parseur hybride optimisé pour les prospectus et rapports financiers."""
+    """Parseur ciblé sur les sections et grilles réglementaires des DIC / KID."""
 
     def __init__(self, output_dir: str = "data/cache/extracted_images"):
         self.output_dir = Path(output_dir)
@@ -18,62 +18,97 @@ class FinancialPDFParser:
         doc = pymupdf.open(pdf_file)
         chunks: list[DocumentChunk] = []
 
+        # Sections financières clés qui méritent une capture visuelle dédiée
+        target_sections = [
+            "INDICATEUR DE RISQUE",
+            "SCÉNARIOS DE PERFORMANCE",
+            "COÛTS AU FIL DU TEMPS",
+            "COMPOSITION DES COÛTS",
+        ]
+
         for page_index in range(len(doc)):
             page = doc[page_index]
             page_number = page_index + 1
-
-            # Détection de tableaux avec stratégie souple (pour tableaux sans bordures nettes)
-            tabs = page.find_tables(
-                vertical_strategy="text",
-                horizontal_strategy="lines_strict"
-            )
-            
-            # Si aucun tableau trouvé, repli sur la stratégie globale
-            if len(tabs.tables) == 0:
-                tabs = page.find_tables()
-
-            table_bboxes = []
-
-            for tab_idx, table in enumerate(tabs):
-                bbox = table.bbox
-                table_bboxes.append(bbox)
-
-                # Export d'image haute résolution (DPI 150)
-                rect = pymupdf.Rect(bbox)
-                pix = page.get_pixmap(clip=rect, dpi=150)
-                image_filename = f"{pdf_file.stem}_p{page_number}_tab{tab_idx}.png"
-                image_path = self.output_dir / image_filename
-                pix.save(str(image_path))
-
-                # Export Markdown
-                markdown_table = table.extract()
-                table_text = self._format_as_markdown(markdown_table)
-
-                chunks.append(
-                    DocumentChunk(
-                        chunk_id=f"{pdf_file.stem}_p{page_number}_tab_{tab_idx}",
-                        source_document=pdf_file.name,
-                        page_number=page_number,
-                        chunk_type=ChunkType.TABLE,
-                        text_content=table_text,
-                        image_path=str(image_path),
-                        bbox=bbox,
-                    )
-                )
-
-            # Extraction des blocs textuels narratifs hors zones de tableaux
             blocks = page.get_text("blocks")
-            for block_idx, block in enumerate(blocks):
-                if block[6] == 0:  # Bloc texte standard
-                    bbox = (block[0], block[1], block[2], block[3])
-                    text = block[4].strip()
 
-                    if not text or self._is_inside_any_table(bbox, table_bboxes):
-                        continue
+            # Trier les blocs du haut vers le bas (selon y0)
+            blocks.sort(key=lambda b: b[1])
+
+            consumed_indices = set()
+
+            for i, block in enumerate(blocks):
+                if i in consumed_indices or block[6] != 0:
+                    continue
+
+                text = block[4].strip()
+                bbox = (block[0], block[1], block[2], block[3])
+
+                if not text or (text.startswith("Page ") and len(text) < 15):
+                    continue
+
+                # Vérifier si le bloc est un titre de section financière clé
+                matched_section = None
+                for sec in target_sections:
+                    if sec in text.upper():
+                        matched_section = sec
+                        break
+
+                if matched_section:
+                    # On englobe ce bloc et les blocs suivants jusqu'au prochain grand titre
+                    section_blocks = [block]
+                    consumed_indices.add(i)
+
+                    next_idx = i + 1
+                    while next_idx < len(blocks):
+                        nxt = blocks[next_idx]
+                        nxt_text = nxt[4].strip()
+                        # Si on rencontre un autre grand titre de section ou une fin de rubrique, on s'arrête
+                        if any(sec in nxt_text.upper() for sec in target_sections) or (
+                            nxt_text.isupper() and len(nxt_text) > 5 and "\n" not in nxt_text
+                        ):
+                            break
+                        if nxt[6] == 0 and nxt_text:
+                            section_blocks.append(nxt)
+                            consumed_indices.add(next_idx)
+                        next_idx += 1
+
+                    # Calcul de la boîte englobante pour la capture haute résolution
+                    x0 = min(b[0] for b in section_blocks)
+                    y0 = min(b[1] for b in section_blocks)
+                    x1 = max(b[2] for b in section_blocks)
+                    y1 = max(b[3] for b in section_blocks)
+
+                    clip_rect = pymupdf.Rect(
+                        max(0, x0 - 10),
+                        max(0, y0 - 10),
+                        min(page.rect.width, x1 + 10),
+                        min(page.rect.height, y1 + 10),
+                    )
+
+                    pix = page.get_pixmap(clip=clip_rect, dpi=150)
+                    safe_name = matched_section.lower().replace(" ", "_")
+                    img_name = f"{pdf_file.stem}_p{page_number}_{safe_name}.png"
+                    img_path = self.output_dir / img_name
+                    pix.save(str(img_path))
+
+                    combined_text = "\n".join(b[4].strip() for b in section_blocks)
 
                     chunks.append(
                         DocumentChunk(
-                            chunk_id=f"{pdf_file.stem}_p{page_number}_blk_{block_idx}",
+                            chunk_id=f"{pdf_file.stem}_p{page_number}_{safe_name}",
+                            source_document=pdf_file.name,
+                            page_number=page_number,
+                            chunk_type=ChunkType.TABLE,
+                            text_content=combined_text,
+                            image_path=str(img_path),
+                            bbox=(clip_rect.x0, clip_rect.y0, clip_rect.x1, clip_rect.y1),
+                        )
+                    )
+                else:
+                    # Bloc narratif standard
+                    chunks.append(
+                        DocumentChunk(
+                            chunk_id=f"{pdf_file.stem}_p{page_number}_b{i}",
                             source_document=pdf_file.name,
                             page_number=page_number,
                             chunk_type=ChunkType.TEXT,
@@ -85,22 +120,3 @@ class FinancialPDFParser:
 
         doc.close()
         return chunks
-
-    def _is_inside_any_table(self, bbox, table_bboxes) -> bool:
-        b_rect = pymupdf.Rect(bbox)
-        for t_bbox in table_bboxes:
-            t_rect = pymupdf.Rect(t_bbox)
-            if b_rect.intersects(t_rect):
-                return True
-        return False
-
-    def _format_as_markdown(self, data: list[list[str]]) -> str:
-        if not data or not data[0]:
-            return ""
-        header = "| " + " | ".join(str(cell or "").replace("\n", " ").strip() for cell in data[0]) + " |"
-        separator = "| " + " | ".join("---" for _ in data[0]) + " |"
-        rows = [
-            "| " + " | ".join(str(cell or "").replace("\n", " ").strip() for cell in row) + " |"
-            for row in data[1:]
-        ]
-        return "\n".join([header, separator] + rows)
