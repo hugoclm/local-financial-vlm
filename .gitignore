@@ -1,0 +1,21 @@
+﻿# Environnement virtuel et cache Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Modeles Deep Learning et poids lourds
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.pth
+
+# Donnees et stockage local
+data/samples/*.pdf
+data/cache/
+qdrant_storage/
+
+# IDE et variables d'environnement
+.env
+.vscode/
+.idea/
