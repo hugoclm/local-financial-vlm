@@ -1,0 +1,70 @@
+from pathlib import Path
+import ollama
+
+
+class MultimodalFinancialGenerator:
+    """Générateur financier exploitant Qwen2.5-VL via Ollama pour analyser texte et images."""
+
+    def __init__(self, model_name: str = "qwen2.5vl:7b"):
+        self.model_name = model_name
+
+    def generate_response(
+        self,
+        query: str,
+        retrieved_context: list[dict],
+    ) -> str:
+        """Construit le prompt multimodal avec les images associées et interroge le VLM."""
+        images_to_send = []
+        text_chunks = []
+
+        for idx, doc in enumerate(retrieved_context, start=1):
+            source_info = f"[Extrait #{idx} - Page {doc.get('page_number')}]"
+            text_chunks.append(f"{source_info}\n{doc.get('text_content', '')}")
+
+            # Si le chunk contient une capture visuelle valide, on l'ajoute
+            img_path = doc.get("image_path")
+            if img_path and Path(img_path).exists():
+                images_to_send.append(str(Path(img_path).resolve()))
+
+        # Assemblage du contexte textuel
+        full_text_context = "\n\n".join(text_chunks)
+
+        system_prompt = (
+            "Tu es un analyste financier quantitatif expert et rigoureux. "
+            "Ton rôle est d'extraire fidèlement les données des documents (textes et tableaux en images).\n\n"
+            "Règles strictes de restitution :\n"
+            "1. Base exclusivement ta réponse sur les faits visibles dans les textes et les images.\n"
+            "2. Si un montant en euros est associé à un scénario ou une hypothèse d'investissement standardisée "
+            "(ex: 'pour 10 000 EUR investis après 1 an'), mentionne explicitement cette condition pour éviter toute ambiguïté.\n"
+            "3. Précise toujours la page source de l'information.\n"
+            "4. Ne fais aucune extrapolation non justifiée."
+        )       
+
+        user_content = (
+            f"Question : {query}\n\n"
+            f"--- CONTEXTE TEXTUEL EXTRAIT ---\n{full_text_context}\n\n"
+            "Analyse attentivement les images des tableaux jointes pour trouver et vérifier les chiffres exacts demandés."
+        )
+
+        # Message structuré pour l'API Ollama
+        message_payload = {
+            "role": "user",
+            "content": user_content,
+        }
+
+        if images_to_send:
+            message_payload["images"] = images_to_send
+
+        # Appel d'inférence locale
+        response = ollama.chat(
+            model=self.model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                message_payload,
+            ],
+            options={
+                "temperature": 0.1,  # Faible température pour éviter les hallucinations
+            },
+        )
+
+        return response["message"]["content"]

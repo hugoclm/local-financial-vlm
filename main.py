@@ -1,39 +1,26 @@
-from src.parsing.pdf_parser import FinancialPDFParser
-from src.indexing.indexer import LocalVectorIndexer
 from src.retrieval.retriever import LocalRetriever
+from src.generation.generator import MultimodalFinancialGenerator
 
 if __name__ == "__main__":
-    pdf_path = "data/samples/sample_prospectus.pdf"
-
-    # 1. Parsing enrichi
-    print("--- 1. PARSING & EXTRACTION DU PDF ---")
-    parser = FinancialPDFParser()
-    chunks = parser.extract_chunks(pdf_path)
-    
-    tables = [c for c in chunks if c.chunk_type.value == "table"]
-    print(f"Total chunks : {len(chunks)} | Tableaux détectés : {len(tables)}")
-    for t in tables:
-        print(f"-> Tableau page {t.page_number} | Image : {t.image_path}")
-
-    # 2. Réindexation
-    print("\n--- 2. INDEXATION DANS QDRANT ---")
-    indexer = LocalVectorIndexer()
-    indexer.index_chunks(chunks)
-    indexer.client.close()
-
-    # 3. Retrieval & Reranking
-    print("\n--- 3. TEST DE RECHERCHE SÉMANTIQUE ---")
-    retriever = LocalRetriever()
     query = "Quels sont les frais de gestion et autres coûts administratifs ou d'exploitation ?"
-    print(f"Requête : '{query}'\n")
+    print(f"\n[1] Question : {query}")
 
-    results = retriever.search(query=query, top_k=3, retrieve_k=10)
-
-    for i, res in enumerate(results, start=1):
-        print(f"--- Résultat #{i} (Score Reranker : {res['rerank_score']:.4f}) ---")
-        print(f"Page : {res['page_number']} | Type : {res['chunk_type']}")
-        if res["image_path"]:
-            print(f"Image liée : {res['image_path']}")
-        print(f"Contenu : {res['text_content'][:200]}...\n")
-
+    # 1. Retrieval + Reranking
+    print("\n[2] Recherche sémantique et reranking dans Qdrant...")
+    retriever = LocalRetriever()
+    results = retriever.search(query=query, top_k=2, retrieve_k=10)
     retriever.close()
+
+    for idx, r in enumerate(results, 1):
+        img_info = f" | Image: {r['image_path']}" if r.get("image_path") else ""
+        print(f"    -> Chunk retenu #{idx} (Page {r['page_number']}, Score {r['rerank_score']:.4f}{img_info})")
+
+    # 2. Génération VLM locale
+    print("\n[3] Génération de la réponse via Qwen2.5-VL (Ollama)...")
+    generator = MultimodalFinancialGenerator()
+    answer = generator.generate_response(query=query, retrieved_context=results)
+
+    print("\n" + "=" * 60)
+    print("RÉPONSE DU SYSTÈME RAG :")
+    print("=" * 60)
+    print(answer)
