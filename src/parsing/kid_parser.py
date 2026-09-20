@@ -1,14 +1,18 @@
 from pathlib import Path
 import pymupdf
+from src.parsing.base import BaseDocumentParser
 from src.parsing.schemas import DocumentChunk, ChunkType
 
 
-class FinancialPDFParser:
-    """Parseur ciblé sur les sections et grilles réglementaires des DIC / KID."""
+class KIDParser(BaseDocumentParser):
+    """Parseur haute fidélité pour DIC / KID PRIIPs (3-4 pages)."""
 
-    def __init__(self, output_dir: str = "data/cache/extracted_images"):
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+    TARGET_SECTIONS = [
+        "INDICATEUR DE RISQUE",
+        "SCÉNARIOS DE PERFORMANCE",
+        "COÛTS AU FIL DU TEMPS",
+        "COMPOSITION DES COÛTS",
+    ]
 
     def extract_chunks(self, pdf_path: str) -> list[DocumentChunk]:
         pdf_file = Path(pdf_path)
@@ -18,21 +22,11 @@ class FinancialPDFParser:
         doc = pymupdf.open(pdf_file)
         chunks: list[DocumentChunk] = []
 
-        # Sections financières clés qui méritent une capture visuelle dédiée
-        target_sections = [
-            "INDICATEUR DE RISQUE",
-            "SCÉNARIOS DE PERFORMANCE",
-            "COÛTS AU FIL DU TEMPS",
-            "COMPOSITION DES COÛTS",
-        ]
-
         for page_index in range(len(doc)):
             page = doc[page_index]
             page_number = page_index + 1
             blocks = page.get_text("blocks")
-
-            # Trier les blocs du haut vers le bas (selon y0)
-            blocks.sort(key=lambda b: b[1])
+            blocks.sort(key=lambda b: b[1])  # Tri vertical
 
             consumed_indices = set()
 
@@ -46,15 +40,13 @@ class FinancialPDFParser:
                 if not text or (text.startswith("Page ") and len(text) < 15):
                     continue
 
-                # Vérifier si le bloc est un titre de section financière clé
                 matched_section = None
-                for sec in target_sections:
+                for sec in self.TARGET_SECTIONS:
                     if sec in text.upper():
                         matched_section = sec
                         break
 
                 if matched_section:
-                    # On englobe ce bloc et les blocs suivants jusqu'au prochain grand titre
                     section_blocks = [block]
                     consumed_indices.add(i)
 
@@ -62,8 +54,7 @@ class FinancialPDFParser:
                     while next_idx < len(blocks):
                         nxt = blocks[next_idx]
                         nxt_text = nxt[4].strip()
-                        # Si on rencontre un autre grand titre de section ou une fin de rubrique, on s'arrête
-                        if any(sec in nxt_text.upper() for sec in target_sections) or (
+                        if any(sec in nxt_text.upper() for sec in self.TARGET_SECTIONS) or (
                             nxt_text.isupper() and len(nxt_text) > 5 and "\n" not in nxt_text
                         ):
                             break
@@ -72,7 +63,6 @@ class FinancialPDFParser:
                             consumed_indices.add(next_idx)
                         next_idx += 1
 
-                    # Calcul de la boîte englobante pour la capture haute résolution
                     x0 = min(b[0] for b in section_blocks)
                     y0 = min(b[1] for b in section_blocks)
                     x1 = max(b[2] for b in section_blocks)
@@ -105,7 +95,6 @@ class FinancialPDFParser:
                         )
                     )
                 else:
-                    # Bloc narratif standard
                     chunks.append(
                         DocumentChunk(
                             chunk_id=f"{pdf_file.stem}_p{page_number}_b{i}",

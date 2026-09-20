@@ -40,6 +40,11 @@ class LocalVectorIndexer:
             )
             print(f"Collection '{self.collection_name}' initialisée (dimension {self.vector_dim}).")
 
+    def close(self):
+        """Ferme la connexion locale et libère le verrou de stockage."""
+        if hasattr(self, "client") and self.client is not None:
+            self.client.close()
+
     def index_chunks(self, chunks: list[DocumentChunk]):
         """Calcule les vecteurs et les enregistre dans Qdrant avec leurs métadonnées."""
         if not chunks:

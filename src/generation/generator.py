@@ -30,21 +30,24 @@ class MultimodalFinancialGenerator:
         full_text_context = "\n\n".join(text_chunks)
 
         system_prompt = (
-            "Tu es un analyste financier quantitatif expert et rigoureux. "
-            "Ton rôle est d'extraire fidèlement les données des documents (textes et tableaux en images).\n\n"
-            "Règles strictes de restitution :\n"
-            "1. Base exclusivement ta réponse sur les faits visibles dans les textes et les images.\n"
-            "2. Si un montant en euros est associé à un scénario ou une hypothèse d'investissement standardisée "
-            "(ex: 'pour 10 000 EUR investis après 1 an'), mentionne explicitement cette condition pour éviter toute ambiguïté.\n"
-            "3. Précise toujours la page source de l'information.\n"
-            "4. Ne fais aucune extrapolation non justifiée."
+           "Tu es un analyste quantitatif et conformité réglementaire de premier ordre. "
+            "Ton objectif est de restituer de façon synthétique et rigoureuse les contraintes d'investissement.\n\n"
+            "Consignes strictes de restitution :\n"
+            "1. Structure impérativement ta réponse sous la forme d'un tableau Markdown synthétique :\n"
+            "   | Classe d'actifs / Instrument | Borne minimale | Borne maximale | Conditions / Précisions | Page source |\n"
+            "2. Reste factuel : ne confonds pas l'allocation actions (0-35%) et le compartiment de taux (65-100%).\n"
+            "3. Chaque contrainte ne doit apparaître QU'UNE SEULE FOIS dans le tableau. Zéro répétition.\n"
+            "4. Ne conclus pas par des listes superflues ou des paragraphes redondants : limite-toi au tableau suivi d'une courte synthèse de 3 lignes maximum si nécessaire."
         )       
 
         user_content = (
             f"Question : {query}\n\n"
-            f"--- CONTEXTE TEXTUEL EXTRAIT ---\n{full_text_context}\n\n"
-            "Analyse attentivement les images des tableaux jointes pour trouver et vérifier les chiffres exacts demandés."
+            f"--- CONTEXTE EXTRAIT DU PROSPECTUS ---\n{full_text_context}\n\n"
         )
+        if images_to_send:
+            user_content += "Analyse attentivement le texte et les captures de tableaux jointes pour extraire les chiffres exacts."
+        else:
+            user_content += "Extrait l'ensemble des règles et contraintes stipulées dans les extraits textuels ci-dessus."
 
         # Message structuré pour l'API Ollama
         message_payload = {
