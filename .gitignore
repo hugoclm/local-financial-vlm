@@ -12,7 +12,7 @@ __pycache__/
 
 # Donnees et stockage local
 data/samples/*.pdf
-!data/samples/prospectus.pdf
+!data/samples/prospectus_sg.pdf
 data/cache/
 qdrant_storage/
 
