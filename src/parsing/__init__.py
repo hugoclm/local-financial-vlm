@@ -1,14 +1,19 @@
-from src.parsing.schemas import DocumentChunk, ChunkType
-from src.parsing.base import BaseDocumentParser
-from src.parsing.kid_parser import KIDParser
-from src.parsing.prospectus_parser import FullProspectusParser
-from src.parsing.dispatcher import DocumentDispatcher
+"""Exports paresseux : importer `src.parsing.chunking` ne charge ni PyMuPDF ni Pydantic."""
+from importlib import import_module
 
-__all__ = [
-    "DocumentChunk",
-    "ChunkType",
-    "BaseDocumentParser",
-    "KIDParser",
-    "FullProspectusParser",
-    "DocumentDispatcher",
-]
+_EXPORTS = {
+    "DocumentChunk": "src.parsing.schemas",
+    "ChunkType": "src.parsing.schemas",
+    "BaseDocumentParser": "src.parsing.base",
+    "KIDParser": "src.parsing.kid_parser",
+    "FullProspectusParser": "src.parsing.prospectus_parser",
+    "DocumentDispatcher": "src.parsing.dispatcher",
+}
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str):
+    if name in _EXPORTS:
+        return getattr(import_module(_EXPORTS[name]), name)
+    raise AttributeError(f"module 'src.parsing' has no attribute {name!r}")
