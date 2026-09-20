@@ -20,3 +20,9 @@ qdrant_storage/
 .env
 .vscode/
 .idea/
+
+*.pyc
+data/samples/
+eval/questions.json
+eval/results.json
+

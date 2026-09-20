@@ -1,0 +1,14 @@
+[
+  {
+    "question": "Quelle est la limite d'exposition aux actions du compartiment ?",
+    "pdf": "data/samples/prospectus.pdf",
+    "expected_pages": [12],
+    "expected_terms": ["35 %", "actions"]
+  },
+  {
+    "question": "Quels sont les frais de gestion annuels ?",
+    "pdf": "data/samples/prospectus.pdf",
+    "expected_pages": [18, 19],
+    "expected_terms": ["frais de gestion"]
+  }
+]
